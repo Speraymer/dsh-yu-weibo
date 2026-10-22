@@ -1,6 +1,6 @@
 {
   "name": "dsh-yu-weibo",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "DSH 刷微博插件：谷时读取时间线、接入人格蒸馏，并可让人格自主发布一条微博。",
   "license": "MIT",
   "repository": {
