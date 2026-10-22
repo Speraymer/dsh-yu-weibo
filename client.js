@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: 'dsh-weibo-scroll',
+  id: 'dsh-yu-weibo',
   factory: (require) => {
     const React = require('react')
     const h = React.createElement

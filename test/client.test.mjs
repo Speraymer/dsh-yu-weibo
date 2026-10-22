@@ -10,6 +10,6 @@ test('registers a parallel settings section', async () => {
   const slots = { inject(_name, run) { run() }, register(meta) { section = meta } }
   plugin.apply({ get: () => slots, effect(run) { run() } })
   assert.deepEqual({ id: bundle.id, section: section.id, order: section.order, label: section.label }, {
-    id: 'dsh-weibo-scroll', section: 'weibo-scroll', order: 32, label: '刷微博',
+    id: 'dsh-yu-weibo', section: 'weibo-scroll', order: 32, label: '刷微博',
   })
 })
