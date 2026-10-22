@@ -1,0 +1,53 @@
+{
+  "name": "dsh-yu-weibo",
+  "version": "0.2.0",
+  "description": "DSH 刷微博插件：谷时读取时间线、接入人格蒸馏，并可让人格自主发布一条微博。",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Speraymer/dsh-yu-weibo.git"
+  },
+  "homepage": "https://github.com/Speraymer/dsh-yu-weibo#readme",
+  "bugs": {
+    "url": "https://github.com/Speraymer/dsh-yu-weibo/issues"
+  },
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "lib",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "dsh": ">=0.1.7-rc.1",
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@weibo-ai/weibo-cli": "0.9.8"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "slots"
+      ],
+      "external": [
+        "react"
+      ]
+    }
+  }
+}
