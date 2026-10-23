@@ -15,7 +15,9 @@ export const inject = ['webServer', 'agents']
 const DEFAULTS = {
   enabled: true, autoRun: false, runAt: '21:30', limit: 10, keywords: '',
   peakValley: true, noon: true, night: true, perDay: 10, quotaDay: '', readToday: 0, lastWindowKey: '',
-  trustedCommands: true, commandSession: '',
+  // 读法：web = 网页版 m.weibo.cn 的公开接口（访客身份、只读、默认）；cli = 官方 weibo-cli
+  readMode: 'web', readOnly: true, readOnlyV1: true,
+  trustedCommands: false, commandSession: '',
   model: 'deepseek-flash', dshBin: '',
   lastRunDay: '', lastRunAt: '', lastResult: '',
 }
@@ -65,7 +67,7 @@ export function apply(ctx) {
   let config = { ...DEFAULTS, ...readJson(configFile, {}) }
   const login = createLogin({
     command: () => weiboLoginCommand(),
-    verify: async () => (await checkWeibo()).loggedIn,
+    verify: async () => (await checkWeibo(config)).loggedIn,
   })
   ctx.effect(() => () => login.cancel(), 'weibo-duty login cleanup')
   let running = false
@@ -82,10 +84,16 @@ export function apply(ctx) {
   }
   ensureSourceHome(root, { id: 'weibo', name: '微博', enabled: config.enabled })
   if (!existsSync(configFile)) save()
+  else if (config.readOnlyV1 !== true) save({
+    // 从"自己发微博"改成"只读访客"：写操作和可信指令一起关掉，读法切到网页版
+    readMode: 'web', readOnly: true, readOnlyV1: true, trustedCommands: false,
+    lastResult: '已切换到只读（网页版访客）模式：不再点赞/评论/转发/发博',
+  })
 
   const publicConfig = () => ({
     enabled: config.enabled, autoRun: config.autoRun, runAt: config.runAt,
     limit: config.limit, keywords: config.keywords,
+    readMode: config.readMode === 'cli' ? 'cli' : 'web', readOnly: config.readOnly !== false,
     peakValley: config.peakValley, noon: config.noon, night: config.night, perDay: config.perDay,
     readToday: config.quotaDay === localDay() ? Number(config.readToday) || 0 : 0,
     trustedCommands: config.trustedCommands, commandSession: config.commandSession,
@@ -99,6 +107,7 @@ export function apply(ctx) {
   }
 
   const dispatchCommands = async () => {
+    if (config.readOnly !== false) return 0
     if (commandChecking) return 0
     if (!config.trustedCommands || !String(config.commandSession || '').trim()) return 0
     const agent = findAgent(config.commandSession)
@@ -127,6 +136,7 @@ export function apply(ctx) {
   }
 
   const postOriginalWeibo = async () => {
+    if (config.readOnly !== false) return { ok: false, error: '只读模式：这个插件不发微博了' }
     if (posting) return { ok: false, error: '上一条还在生成或发布' }
     let history = readJson(postLedger, { attempts: [] })
     const today = localDay()
@@ -137,7 +147,7 @@ export function apply(ctx) {
       const text = parseOriginalWeibo(output)
       history = { attempts: [...(history.attempts || []), { day: today, at: new Date().toISOString(), status: 'started' }].slice(-400) }
       writeJsonAtomic(postLedger, history)
-      const result = await publishWeibo(text)
+      const result = await publishWeibo(text, { ...config, root })
       log('original-post ok')
       return { ok: true, summary: '大肥鱼已经自己想好主题并提交了一条微博', result }
     } catch (error) {
@@ -154,7 +164,7 @@ export function apply(ctx) {
     if (remaining <= 0) return { ok: true, skipped: true, read: 0, added: 0, error: '今天的自动浏览额度已用完' }
     running = true
     try {
-      const items = await fetchWeibo({ ...config, limit: Math.min(Number(config.limit) || 10, remaining) })
+      const items = await fetchWeibo({ ...config, root, limit: Math.min(Number(config.limit) || 10, remaining) })
       const commandCount = await dispatchCommands()
       const result = storeRun(root, '微博', items)
       const now = new Date()
@@ -172,13 +182,20 @@ export function apply(ctx) {
 
   const status = async () => ({
     ok: true, home: root, running, posting, config: publicConfig(), windows: WINDOWS, lastRunAt: config.lastRunAt,
-    lastResult: config.lastResult, provider: await checkWeibo(), personaSource: join(root, 'source.json'),
+    lastResult: config.lastResult, provider: await checkWeibo({ ...config, root }), personaSource: join(root, 'source.json'),
   })
 
   const handle = async (req, res, url) => {
     const path = url.pathname
     if (path === '/api/weibo-duty/login') {
-      if (req.method === 'GET') return sendJson(res, 200, { ok: true, login: login.snapshot() })
+      if (req.method === 'GET') {
+        return sendJson(res, 200, {
+          ok: true, readOnly: config.readOnly !== false,
+          login: config.readOnly !== false
+            ? { status: 'disabled', message: '只读访客模式：不需要登录，也没有可写的操作' }
+            : login.snapshot(),
+        })
+      }
       if (req.method === 'POST') {
         if (!/^application\/json(?:;|$)/i.test(req.headers?.['content-type'] || '')) return sendJson(res, 415, { ok: false, error: '请从设置页开始登录' })
         if (req.headers?.origin && req.headers.origin !== 'dsh-app://app') {
@@ -186,6 +203,7 @@ export function apply(ctx) {
           try { origin = new URL(req.headers.origin) } catch { return sendJson(res, 403, { ok: false, error: '请求来源无效' }) }
           if (origin.host !== req.headers.host || !['http:', 'https:'].includes(origin.protocol)) return sendJson(res, 403, { ok: false, error: '请求来源不匹配' })
         }
+        if (config.readOnly !== false) return sendJson(res, 409, { ok: false, error: '只读访客模式：不需要登录，也没有可写的操作' })
         const body = await readBody(req)
         if (body.cancel === true) login.cancel()
         else login.start()
@@ -205,13 +223,14 @@ export function apply(ctx) {
       if ('perDay' in body) patch.perDay = Math.max(0, Math.min(80, Number(body.perDay) || 0))
       if ('limit' in body) patch.limit = Math.max(1, Math.min(30, Number(body.limit) || 10))
       if ('keywords' in body) patch.keywords = cleanText(body.keywords, 200)
-      if ('trustedCommands' in body) patch.trustedCommands = body.trustedCommands === true
-      if ('commandSession' in body) patch.commandSession = cleanText(body.commandSession, 120)
+      if ('trustedCommands' in body && config.readOnly === false) patch.trustedCommands = body.trustedCommands === true
+      if ('commandSession' in body && config.readOnly === false) patch.commandSession = cleanText(body.commandSession, 120)
       save(patch)
       return sendJson(res, 200, { ok: true, config: publicConfig() })
     }
     if (req.method === 'POST' && path === '/api/weibo-duty/run') return sendJson(res, 200, await run('manual'))
     if (req.method === 'POST' && path === '/api/weibo-duty/post') {
+      if (config.readOnly !== false) return sendJson(res, 409, { ok: false, error: '只读模式：这个插件不发微博' })
       const result = await postOriginalWeibo()
       return sendJson(res, result.ok ? 200 : 409, result)
     }

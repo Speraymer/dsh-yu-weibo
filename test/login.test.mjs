@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events'
 import { mkdtempSync, writeFileSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createLogin } from '../lib/login.mjs'
+import { createLogin, stopLoginProcess } from '../lib/login.mjs'
 
 function fixture(options = {}) {
   const children = []
@@ -65,4 +65,17 @@ test('device output is parsed across chunks and rejects foreign links', () => {
   assert.equal(login.snapshot().code, 'TEST-1234')
   assert.equal(login.snapshot().url, 'https://open.weibo.com/cli/device?user_code=TEST-1234')
   login.cancel(); assert.equal(login.snapshot().code, undefined)
+})
+
+test('Windows cancellation targets only the login process tree and ignores finished children', () => {
+  let call, killed = 0
+  const child = { pid: 12345, exitCode: null, kill: () => { killed++ } }
+  const killer = new EventEmitter()
+  stopLoginProcess(child, (...args) => { call = args; return killer }, 'win32')
+  assert.equal(call[0], 'taskkill.exe')
+  assert.deepEqual(call[1], ['/PID', '12345', '/T', '/F'])
+  assert.equal(call[2].shell, false)
+  assert.equal(call[2].windowsHide, true)
+  killer.emit('error', Error('mock missing taskkill')); assert.equal(killed, 1)
+  stopLoginProcess({ ...child, exitCode: 0 }, () => { throw Error('must not kill reused PID') }, 'win32')
 })

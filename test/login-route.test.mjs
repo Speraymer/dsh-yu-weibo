@@ -6,7 +6,8 @@ import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { apply } from '../index.js'
 
-test('login API accepts desktop origin, rejects foreign origins and never runs social actions', async () => {
+// 只读模式（默认）：登录接口一律拒绝，且拒绝之前先过来源/类型校验
+test('login API stays closed in read-only mode but still validates origin first', async () => {
   const root = mkdtempSync(join(tmpdir(), 'weibo-login-api-'))
   let handler
   const dispose = []
@@ -26,12 +27,16 @@ test('login API accepts desktop origin, rejects foreign origins and never runs s
       await handler(req, res)
       return { status: res.statusCode, body }
     }
-    assert.equal((await request('GET')).body.login.status, 'idle')
+    const idle = await request('GET')
+    assert.equal(idle.status, 200)
+    assert.equal(idle.body.readOnly, true)
+    assert.equal(idle.body.login.status, 'disabled')
+
     assert.equal((await request('POST', 'https://evil.example')).status, 403)
     assert.equal((await request('POST', 'null')).status, 403)
     assert.equal((await request('POST', 'dsh-app://app', 'text/plain')).status, 415)
-    assert.equal((await request('POST', 'dsh-app://app')).status, 200)
-    assert.equal((await request('POST', 'http://127.0.0.1:9999')).status, 200)
+    assert.equal((await request('POST', 'dsh-app://app')).status, 409)
+    assert.equal((await request('POST', 'http://127.0.0.1:9999')).status, 409)
     assert.equal((await request('DELETE')).status, 405)
   } finally { for (const stop of dispose.reverse()) stop(); globalThis.fetch = originalFetch }
 })
