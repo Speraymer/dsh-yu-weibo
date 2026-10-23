@@ -1,9 +1,10 @@
+import { createLogin } from './lib/login.mjs'
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { cleanText, dueWindow, ensureSourceHome, localDay, remainingToday, storeRun, WINDOWS, writeJsonAtomic } from './lib/core.mjs'
-import { checkWeibo, fetchWeibo, fetchWeiboCommands, publishWeibo } from './lib/provider.mjs'
+import { weiboLoginCommand, checkWeibo, fetchWeibo, fetchWeiboCommands, publishWeibo } from './lib/provider.mjs'
 import { claimCommands } from './lib/commands.mjs'
 import { runPersonaPlanner } from './lib/headless.mjs'
 import { buildOriginalWeiboPrompt, parseOriginalWeibo } from './lib/post.mjs'
@@ -62,6 +63,11 @@ export function apply(ctx) {
   const commandLedger = join(root, 'trusted-commands.json')
   const postLedger = join(root, 'posts.json')
   let config = { ...DEFAULTS, ...readJson(configFile, {}) }
+  const login = createLogin({
+    command: () => weiboLoginCommand(),
+    verify: async () => (await checkWeibo()).loggedIn,
+  })
+  ctx.effect(() => () => login.cancel(), 'weibo-duty login cleanup')
   let running = false
   let posting = false
   let commandChecking = false, lastCommandCheck = 0
@@ -171,6 +177,22 @@ export function apply(ctx) {
 
   const handle = async (req, res, url) => {
     const path = url.pathname
+    if (path === '/api/weibo-duty/login') {
+      if (req.method === 'GET') return sendJson(res, 200, { ok: true, login: login.snapshot() })
+      if (req.method === 'POST') {
+        if (!/^application\/json(?:;|$)/i.test(req.headers?.['content-type'] || '')) return sendJson(res, 415, { ok: false, error: '请从设置页开始登录' })
+        if (req.headers?.origin && req.headers.origin !== 'dsh-app://app') {
+          let origin
+          try { origin = new URL(req.headers.origin) } catch { return sendJson(res, 403, { ok: false, error: '请求来源无效' }) }
+          if (origin.host !== req.headers.host || !['http:', 'https:'].includes(origin.protocol)) return sendJson(res, 403, { ok: false, error: '请求来源不匹配' })
+        }
+        const body = await readBody(req)
+        if (body.cancel === true) login.cancel()
+        else login.start()
+        return sendJson(res, 200, { ok: true, login: login.snapshot() })
+      }
+      return sendJson(res, 405, { ok: false, error: '登录接口仅支持 GET / POST' })
+    }
     if (req.method === 'GET' && path === '/api/weibo-duty/status') return sendJson(res, 200, await status())
     if (req.method === 'GET' && path === '/api/weibo-duty/config') return sendJson(res, 200, { ok: true, config: publicConfig() })
     if (req.method === 'POST' && path === '/api/weibo-duty/config') {

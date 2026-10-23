@@ -23,10 +23,32 @@ window.__ModuleLoader__.load({
       const [state, setState] = React.useState(null)
       const [message, setMessage] = React.useState('')
       const [report, setReport] = React.useState('')
+      const [login, setLogin] = React.useState({ status: 'idle' })
+      const [loginBusy, setLoginBusy] = React.useState(false)
       const load = React.useCallback(async () => {
         try { setState(await request('/status')); setMessage('') } catch (error) { setMessage(error.message) }
       }, [])
       React.useEffect(() => { load() }, [load])
+      React.useEffect(() => {
+        let stopped = false, timer
+        const poll = async () => {
+          try {
+            const result = await request('/login')
+            if (stopped) return
+            setLogin(result.login)
+            if (result.login.status === 'running') timer = setTimeout(poll, 1500)
+            else if (result.login.status === 'success') await load()
+          } catch (error) { if (!stopped) setMessage(error.message) }
+        }
+        poll()
+        return () => { stopped = true; clearTimeout(timer) }
+      }, [login.status, load])
+      const beginLogin = async (cancel = false) => {
+        setLoginBusy(true)
+        try { const result = await request('/login', { cancel }); setLogin(result.login) }
+        catch (error) { setMessage(error.message) }
+        finally { setLoginBusy(false) }
+      }
       if (!state) return h('div', { 'data-social-note': '' }, message || '正在读取…')
       const cfg = state.config
       const save = async (patch) => {
@@ -44,6 +66,17 @@ window.__ModuleLoader__.load({
       return h('div', { 'data-social-page': '' },
         h('h3', null, '刷微博'),
         h('div', { 'data-social-note': '' }, '通过微博官方 weibo-cli 刷已登录账号的好友时间线；填写关键词后改为搜索。普通微博始终只是素材；只有已登录账号自己发布且以 /dsh 开头的微博可进入下方目标会话。'),
+
+        h('section', { 'aria-label': '微博账号登录' },
+          h('h4', null, '账号登录'),
+          h('div', { 'data-social-note': '' }, state.provider.loggedIn ? '账号已连接。需要换账号时可重新登录。' : '点击下方按钮获取授权链接，在微博授权页输入验证码并确认。'),
+          h('div', { 'data-social-row': '' },
+            h('button', { 'data-social-btn': '', disabled: loginBusy || login.status === 'running', onClick: () => beginLogin() }, login.status === 'running' ? '等待登录…' : state.provider.loggedIn ? '重新登录' : '登录微博'),
+            login.status === 'running' ? h('button', { 'data-social-btn': '', disabled: loginBusy, onClick: () => beginLogin(true) }, '取消登录') : null,
+            h('button', { 'data-social-btn': '', onClick: load }, '检查连接')),
+          h('div', { 'data-social-note': '', role: 'status', 'aria-live': 'polite' }, login.message || ''),
+          login.url ? h('a', { href: login.url, target: '_blank', rel: 'noopener noreferrer' }, '打开微博授权页') : null,
+          login.code ? h('div', null, '验证码：', h('code', { style: { fontSize: 20, userSelect: 'all' } }, login.code)) : null),
         h('label', { 'data-social-row': '' }, h('input', { type: 'checkbox', checked: cfg.enabled, onChange: (e) => save({ enabled: e.target.checked }) }), '启用人格素材源'),
         h('hr'), h('h4', null, '谷时自动刷'),
         h('label', { 'data-social-row': '' }, h('input', { type: 'checkbox', checked: cfg.peakValley, onChange: (e) => save({ peakValley: e.target.checked }) }), '在谷时自动刷'),
@@ -62,7 +95,7 @@ window.__ModuleLoader__.load({
         h('div', { 'data-social-note': '' }, '硬校验已登录账号的 UID，并按微博 ID 只投递一次。昵称和别人复制 /dsh 都无效；未登录或不填目标会话时保持关闭。'),
         h('div', { 'data-social-note': '' }, state.provider.loggedIn
           ? `微博账号已连接${state.provider.account ? `：${state.provider.account}` : ''}`
-          : `微博账号未连接。请在本机终端执行：weibo auth login\n${state.provider.error || ''}`),
+          : `微博账号未连接，请使用上方“登录微博”按钮\n${state.provider.error || ''}`),
         h('div', { 'data-social-row': '' },
           h('button', { 'data-social-btn': '', onClick: run, disabled: state.running || !state.provider.loggedIn }, state.running ? '正在刷…' : '现在刷一轮'),
           h('button', { 'data-social-btn': '', onClick: load }, '重新检查登录'),
