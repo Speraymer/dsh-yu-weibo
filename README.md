@@ -1,6 +1,6 @@
 # dsh-yu-weibo · 只读版
 
-> 内部插件 ID（`weibo-scroll`）、API 路由（`/api/weibo-duty/*`）和数据目录（`~/.dsh/weibo-duty`）沿用旧仓库名 `dsh-weibo-scroll` —— 原因见下文「不能与原版共存」。
+> 为保护现有数据，内部 ID、API 路由和数据目录保持兼容。
 
 ## 它是干什么的
 
@@ -64,13 +64,6 @@ dsh plugin --profile desktop add link:<本机路径>/dsh-yu-weibo
 - 「现在刷一轮」「看今天报告」
 - 没有登录按钮，也没有任何互动开关 —— 只读模式下这些接口返回 409。
 
-## 单独安装与降级
-
-- **不依赖兄弟插件**：不 import 刷知乎 / 鱼的记忆，也不 import `dsh-persona-distill`。人格素材是直接读 `~/.dsh/AGENTS.md` 的 `<!-- AUTO -->` 段，读不到就当空字符串。
-- **`@weibo-ai/weibo-cli` 仍是可选依赖**：只有把 `readMode` 显式改成 `cli`（并在 `config.json` 里把 `readOnly` 改成 `false`）才会用到它。默认 `readMode: 'web'` 不需要它，也不需要任何登录。
-- **没有下游消费者也能跑**：写进 `~/.dsh/weibo-duty/` 的 `source.json` / `voice.md` / `notes.md` 只是给人格蒸馏读的原料；没装蒸馏插件时这些文件照写。
-- **降级路径**：设置页关掉总开关 = 等同未安装；缺 `~/.dsh/weibo-duty` 会自动建。
-
 ## 已知的坑（写在这，省得下次再踩）
 
 1. **`DevToolsActivePort` 会骗人**：上次没关干净的端口文件会让新进程连到一个死端口。现在按文件 mtime 过滤，连上先问 `Browser.getVersion`，答不上来就重开。
@@ -91,17 +84,3 @@ npm test
 ```powershell
 node tools/live-check.mjs
 ```
-
-## 不能与原版共存
-
-和上游的 `dsh-weibo-scroll`（原版刷微博插件）是同一个插件：发布时只换了 npm 包名和仓库名，**内部标识全部沿用旧名**。
-
-| 项目 | 仍使用的旧名 |
-|---|---|
-| 插件 ID（`~/.dsh/cordis.patch.yml` 里的 `- id:`） | `weibo-scroll` |
-| 导出的 `name` | `weibo-scroll` |
-| API 路由 | `/api/weibo-duty/*` |
-| 数据目录 | `~/.dsh/weibo-duty/` |
-| 人格源 ID（`source.json`） | `weibo` |
-
-**不能和上游原版同时启用**：两边抢同一个插件 ID 和同一组 `/api/weibo-duty` 路由，注册会冲突；还会读写同一个数据目录、同一份「今天是否已经发过」的台账。要用这个版本，先卸载原版再装。
