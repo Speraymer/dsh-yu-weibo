@@ -18,7 +18,7 @@ const DEFAULTS = {
   // 读法：web = 网页版 m.weibo.cn 的公开接口（访客身份、只读、默认）；cli = 官方 weibo-cli
   readMode: 'web', readOnly: true, readOnlyV1: true,
   trustedCommands: false, commandSession: '',
-  model: 'deepseek-flash', dshBin: '',
+  model: 'deepseek-flash', provider: 'deepseek-account', dshBin: '',
   lastRunDay: '', lastRunAt: '', lastResult: '',
 }
 
