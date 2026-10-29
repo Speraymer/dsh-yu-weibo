@@ -1,5 +1,9 @@
 # dsh-yu-weibo · 只读版
 
+## 给 Agent 的安装与验收
+
+执行 `dsh plugin --profile desktop add github:Speraymer/dsh-yu-weibo`，重启 DSH；确认“设置 → 刷微博”出现并手动跑一轮。公开版始终强制网页访客只读，不需要登录，也不能通过手改配置开启点赞、评论、转发或发博。
+
 > 为保护现有数据，内部 ID、API 路由和数据目录保持兼容。
 
 ## 它是干什么的

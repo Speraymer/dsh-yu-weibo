@@ -1,6 +1,6 @@
 {
   "name": "dsh-yu-weibo",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "DSH 刷微博插件（只读）：谷时读网页版 m.weibo.cn 的公开内容，接入人格蒸馏；不登录、不点赞评论转发发博。",
   "license": "MIT",
   "repository": {

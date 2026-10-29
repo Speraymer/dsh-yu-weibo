@@ -8,6 +8,7 @@ import { weiboLoginCommand, checkWeibo, fetchWeibo, fetchWeiboCommands, publishW
 import { claimCommands } from './lib/commands.mjs'
 import { runPersonaPlanner } from './lib/headless.mjs'
 import { buildOriginalWeiboPrompt, parseOriginalWeibo } from './lib/post.mjs'
+import { trustedRequestOrigin } from './lib/http.mjs'
 
 export const name = 'weibo-scroll'
 export const inject = ['webServer', 'agents']
@@ -84,19 +85,20 @@ export function apply(ctx) {
   }
   ensureSourceHome(root, { id: 'weibo', name: '微博', enabled: config.enabled })
   if (!existsSync(configFile)) save()
-  else if (config.readOnlyV1 !== true) save({
-    // 从"自己发微博"改成"只读访客"：写操作和可信指令一起关掉，读法切到网页版
+  else if (config.readMode !== 'web' || config.readOnly !== true || config.trustedCommands !== false || config.commandSession) save({
+    // 公开版固定只读；即使手改过旧配置，启动时也收回写操作。
     readMode: 'web', readOnly: true, readOnlyV1: true, trustedCommands: false,
+    commandSession: '',
     lastResult: '已切换到只读（网页版访客）模式：不再点赞/评论/转发/发博',
   })
 
   const publicConfig = () => ({
     enabled: config.enabled, autoRun: config.autoRun, runAt: config.runAt,
     limit: config.limit, keywords: config.keywords,
-    readMode: config.readMode === 'cli' ? 'cli' : 'web', readOnly: config.readOnly !== false,
+    readMode: 'web', readOnly: true,
     peakValley: config.peakValley, noon: config.noon, night: config.night, perDay: config.perDay,
     readToday: config.quotaDay === localDay() ? Number(config.readToday) || 0 : 0,
-    trustedCommands: config.trustedCommands, commandSession: config.commandSession,
+    trustedCommands: false, commandSession: '',
   })
 
   const findAgent = (id) => {
@@ -187,6 +189,9 @@ export function apply(ctx) {
 
   const handle = async (req, res, url) => {
     const path = url.pathname
+    if (req.method !== 'GET' && !trustedRequestOrigin(req)) {
+      return sendJson(res, 403, { ok: false, error: '请求来源不匹配' })
+    }
     if (path === '/api/weibo-duty/login') {
       if (req.method === 'GET') {
         return sendJson(res, 200, {
@@ -198,11 +203,6 @@ export function apply(ctx) {
       }
       if (req.method === 'POST') {
         if (!/^application\/json(?:;|$)/i.test(req.headers?.['content-type'] || '')) return sendJson(res, 415, { ok: false, error: '请从设置页开始登录' })
-        if (req.headers?.origin && req.headers.origin !== 'dsh-app://app') {
-          let origin
-          try { origin = new URL(req.headers.origin) } catch { return sendJson(res, 403, { ok: false, error: '请求来源无效' }) }
-          if (origin.host !== req.headers.host || !['http:', 'https:'].includes(origin.protocol)) return sendJson(res, 403, { ok: false, error: '请求来源不匹配' })
-        }
         if (config.readOnly !== false) return sendJson(res, 409, { ok: false, error: '只读访客模式：不需要登录，也没有可写的操作' })
         const body = await readBody(req)
         if (body.cancel === true) login.cancel()
